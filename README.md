@@ -6,6 +6,8 @@ RTP no evalúa el resultado: registra el **proceso**. Cada interacción conserva
 
 La aplicación funciona sin backend, sin instalación y sin conexión a red. Puede abrirse directamente desde el sistema de archivos o publicarse en GitHub Pages.
 
+Para el uso paso a paso, consulta la [guía de uso](GUIA.md).
+
 ---
 
 ## Inicio rápido
@@ -237,6 +239,7 @@ npm run example
 ├── examples/ejemplo-traza.json # Registro de ejemplo válido
 ├── scripts/generate-example.cjs
 ├── tests/                      # Pruebas con node:test
+├── GUIA.md                     # Guía de uso para el alumnado
 ├── .nojekyll                   # Evita el procesado Jekyll en GitHub Pages
 ├── .github/workflows/pages.yml # Publicación alternativa con GitHub Actions
 └── package.json
