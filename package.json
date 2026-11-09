@@ -1,0 +1,16 @@
+{
+  "name": "rtp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RTP — Registro de Trazabilidad de Prompts",
+  "scripts": {
+    "test": "node --test tests/validate.test.cjs tests/chain.test.cjs tests/app.smoke.test.cjs",
+    "example": "node scripts/generate-example.cjs",
+    "serve": "python -m http.server 8080"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "jsdom": "^29.1.1"
+  }
+}

@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RTP — Registro de Trazabilidad de Prompts. Herramienta estática para documentar el proceso de colaboración con la IAG.">
+  <title>RTP — Registro de Trazabilidad de Prompts</title>
+  <script>
+    (function () {
+      var theme = 'light';
+      try {
+        var stored = localStorage.getItem('rtp:v1:theme');
+        if (stored === 'light' || stored === 'dark' || stored === 'system') {
+          theme = stored;
+        }
+      } catch (err) {
+        // Sin almacenamiento: se usa el tema claro por defecto.
+      }
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b5fff'/%3E%3Ctext x='32' y='42' font-family='system-ui,sans-serif' font-size='24' font-weight='700' text-anchor='middle' fill='white'%3ERTP%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido principal</a>
+
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">RTP</span>
+        <div class="brand-text">
+          <h1>Registro de Trazabilidad de Prompts</h1>
+          <p class="subtitle">Documenta tu proceso de colaboración con la IAG</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <label class="theme-control">
+          <span class="visually-hidden">Tema de la interfaz</span>
+          <select id="theme-select" class="theme-select">
+            <option value="light">Claro</option>
+            <option value="dark">Oscuro</option>
+            <option value="system">Sistema</option>
+          </select>
+        </label>
+        <button type="button" class="btn btn-ghost" id="btn-help">Ayuda</button>
+        <button type="button" class="btn btn-ghost" id="btn-edit-setup">Datos del trabajo</button>
+        <button type="button" class="btn btn-ghost" id="btn-view-json">Ver JSON</button>
+        <button type="button" class="btn btn-ghost" id="btn-copy">Copiar JSON</button>
+        <button type="button" class="btn btn-primary" id="btn-export">Exportar JSON</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="app-main">
+    <noscript>
+      <p class="notice notice-error">RTP necesita JavaScript para funcionar. Actívalo en tu navegador y vuelve a cargar la página.</p>
+    </noscript>
+
+    <section id="view-setup" class="view" hidden>
+      <div class="card setup-card">
+        <h2 id="setup-title">Configura tu registro</h2>
+        <p class="lead">Estos datos identifican el trabajo y quedarán incluidos en el JSON que entregarás.</p>
+        <p class="hint">¿Ya tienes un registro exportado? Cárgalo y se recuperarán los datos del trabajo, la declaración y las iteraciones.</p>
+
+        <form id="setup-form" novalidate>
+          <div class="field">
+            <label for="setup-student-id">Identificador del estudiante</label>
+            <input id="setup-student-id" name="student_id" type="text" required maxlength="64" autocomplete="off" placeholder="Expediente o correo">
+            <p class="hint">Obligatorio. Se usará para identificar el registro.</p>
+          </div>
+
+          <div class="field">
+            <label for="setup-student-name">Nombre y apellidos <span class="optional">(opcional)</span></label>
+            <input id="setup-student-name" name="student_name" type="text" maxlength="120" autocomplete="name">
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="setup-assignment-id">Identificador del trabajo</label>
+              <input id="setup-assignment-id" name="assignment_id" type="text" required maxlength="64" placeholder="Ej. GSyA-2026-P1">
+            </div>
+            <div class="field">
+              <label for="setup-course">Curso</label>
+              <input id="setup-course" name="course" type="text" required maxlength="20" placeholder="Ej. 2026/27">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="setup-assignment-title">Título del trabajo</label>
+            <input id="setup-assignment-title" name="assignment_title" type="text" required maxlength="200">
+          </div>
+
+          <fieldset class="field declaration">
+            <legend>Declaración</legend>
+            <p id="declaration-text" class="declaration-text"></p>
+            <label class="checkbox">
+              <input id="setup-declaration" name="declaration" type="checkbox" required>
+              <span>Acepto la declaración de autoría y veracidad del registro.</span>
+            </label>
+          </fieldset>
+
+          <div id="setup-errors" class="form-errors" role="alert" hidden></div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="btn-import-setup">Cargar JSON existente</button>
+            <button type="button" id="btn-setup-cancel" class="btn btn-ghost" hidden>Cancelar</button>
+            <button type="submit" class="btn btn-primary">Guardar y continuar</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="view-main" class="view" hidden>
+      <p class="record-context" id="record-context"></p>
+      <div class="status-bar" id="status-bar" role="status" aria-live="polite"></div>
+      <div class="stats" id="stats" aria-label="Resumen del registro"></div>
+
+      <div class="toolbar">
+        <button type="button" class="btn btn-primary" id="btn-new-entry">+ Nueva iteración</button>
+        <div class="toolbar-secondary">
+          <button type="button" class="btn btn-ghost" id="btn-import">Cargar JSON</button>
+          <button type="button" class="btn btn-danger-ghost" id="btn-reset">Nuevo registro</button>
+        </div>
+      </div>
+
+      <ol id="timeline" class="timeline" aria-label="Iteraciones registradas"></ol>
+      <p id="empty-state" class="empty-state" hidden>
+        Todavía no has registrado ninguna iteración. Pulsa «Nueva iteración» para empezar.
+      </p>
+    </section>
+  </main>
+
+  <dialog id="entry-dialog" class="dialog" aria-labelledby="entry-dialog-title">
+    <form id="entry-form" novalidate>
+      <header class="dialog-header">
+        <h2 id="entry-dialog-title">Nueva iteración</h2>
+        <button type="button" class="btn-icon" data-close-dialog aria-label="Cerrar">×</button>
+      </header>
+
+      <div class="dialog-body">
+        <div class="field">
+          <label for="entry-occurred">Fecha y hora de la interacción</label>
+          <input id="entry-occurred" name="occurred_at" type="datetime-local" required>
+          <p class="hint">Cuándo hablaste con la IA. Se usa para ordenar la traza.</p>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="entry-model">Modelo</label>
+            <input id="entry-model" name="model_name" type="text" list="model-options" required maxlength="120" autocomplete="off" placeholder="Ej. GPT-4o">
+            <datalist id="model-options"></datalist>
+          </div>
+          <div class="field">
+            <label for="entry-provider">Proveedor <span class="optional">(opcional)</span></label>
+            <input id="entry-provider" name="model_provider" type="text" list="provider-options" maxlength="80" autocomplete="off" placeholder="Ej. OpenAI">
+            <datalist id="provider-options"></datalist>
+          </div>
+        </div>
+
+        <fieldset class="field">
+          <legend>Tipo de acceso</legend>
+          <div class="radio-row">
+            <label class="radio"><input type="radio" name="access" value="free" required> Gratuito</label>
+            <label class="radio"><input type="radio" name="access" value="paid" required> De pago</label>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="entry-attachments">Archivos adjuntos <span class="optional">(opcional)</span></label>
+          <input id="entry-attachments" name="attachments" type="file" multiple>
+          <p class="hint">Solo se guardan nombre, tamaño, tipo y huella SHA-256. El archivo no se lee ni se sube a ningún sitio.</p>
+          <p id="attachment-status" class="hint" role="status" aria-live="polite"></p>
+          <ul id="attachment-list" class="attachment-list"></ul>
+        </div>
+
+        <div class="field">
+          <label for="entry-prompt">Prompt exacto</label>
+          <textarea id="entry-prompt" name="prompt" rows="8" required placeholder="Pega aquí el texto exacto que enviaste a la IA"></textarea>
+          <div class="field-meta"><span id="prompt-count">0 caracteres</span></div>
+        </div>
+
+        <p id="draft-note" class="notice notice-info" hidden>Se han recuperado el modelo y el tipo de acceso de la última vez.</p>
+        <div id="entry-errors" class="form-errors" role="alert" hidden></div>
+      </div>
+
+      <footer class="dialog-footer">
+        <button type="button" class="btn btn-ghost" data-close-dialog>Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btn-save-entry">Guardar iteración</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="dialog dialog-small" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <header class="dialog-header">
+        <h2 id="confirm-title">Confirmar acción</h2>
+      </header>
+      <div class="dialog-body">
+        <p id="confirm-message"></p>
+        <ul id="confirm-details" class="confirm-details" hidden></ul>
+      </div>
+      <footer class="dialog-footer">
+        <button type="submit" value="cancel" class="btn btn-ghost">Cancelar</button>
+        <button type="submit" value="ok" class="btn btn-primary" id="confirm-ok">Continuar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="errors-dialog" class="dialog" aria-labelledby="errors-title">
+    <form method="dialog">
+      <header class="dialog-header">
+        <h2 id="errors-title">Revisa el registro</h2>
+        <button type="button" class="btn-icon" data-close-dialog aria-label="Cerrar">×</button>
+      </header>
+      <div class="dialog-body">
+        <p id="errors-summary" class="lead"></p>
+        <ul id="errors-list" class="error-list"></ul>
+      </div>
+      <footer class="dialog-footer">
+        <button type="submit" class="btn btn-primary">Entendido</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="json-dialog" class="dialog dialog-wide" aria-labelledby="json-title">
+    <form method="dialog">
+      <header class="dialog-header">
+        <h2 id="json-title">JSON del registro</h2>
+        <button type="button" class="btn-icon" data-close-dialog aria-label="Cerrar">×</button>
+      </header>
+      <div class="dialog-body">
+        <p id="json-note" class="hint">Vista previa en vivo del JSON que se exportará. Se actualiza automáticamente al modificar el registro.</p>
+        <p id="json-status" class="json-status" role="status" aria-live="polite"></p>
+        <textarea id="json-text" class="json-text" readonly rows="20" spellcheck="false"></textarea>
+      </div>
+      <footer class="dialog-footer json-footer">
+        <button type="button" class="btn btn-ghost" id="btn-copy-live-json">Copiar</button>
+        <button type="button" class="btn btn-primary" id="btn-download-live-json">Descargar</button>
+        <button type="button" class="btn btn-ghost" id="btn-select-json">Seleccionar todo</button>
+        <button type="submit" class="btn btn-ghost">Cerrar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="help-dialog" class="dialog" aria-labelledby="help-title">
+    <form method="dialog">
+      <header class="dialog-header">
+        <h2 id="help-title">Cómo funciona RTP</h2>
+        <button type="button" class="btn-icon" data-close-dialog aria-label="Cerrar">×</button>
+      </header>
+      <div class="dialog-body">
+        <ol class="help-steps">
+          <li>Completa los datos del trabajo y acepta la declaración.</li>
+          <li>Registra cada interacción con la IA: modelo, tipo de acceso, adjuntos y el prompt exacto.</li>
+          <li>Exporta el JSON al terminar y entrégalo junto con la memoria. Si más adelante necesitas continuar un registro, usa «Cargar JSON» para recuperarlo y seguir añadiendo iteraciones.</li>
+        </ol>
+        <p class="hint">El panel «Ver JSON» muestra una vista previa en vivo. Copiar no marca el registro como exportado; descargar sí.</p>
+        <p class="hint">Todo se guarda en tu navegador. RTP no envía datos a ningún servidor. La huella SHA-256 de los adjuntos se calcula en local y no se lee el contenido.</p>
+        <p class="hint">La cadena de integridad permite detectar ediciones posteriores a la exportación, pero no sustituye a la defensa oral ni a la revisión docente.</p>
+      </div>
+      <footer class="dialog-footer">
+        <button type="submit" class="btn btn-primary">Entendido</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <input type="file" id="import-input" accept="application/json,.json" hidden>
+
+  <script src="./assets/config.js"></script>
+  <script src="./assets/sha256.js"></script>
+  <script src="./assets/chain.js"></script>
+  <script src="./assets/validate.js"></script>
+  <script src="./assets/app.js"></script>
+</body>
+</html>

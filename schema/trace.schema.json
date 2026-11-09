@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rtp:schema:trace:1.0.0",
+  "title": "RTP — Registro de Trazabilidad de Prompts",
+  "description": "Esquema del registro de iteraciones con herramientas de IAG. Versión 1.0.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "exported_at",
+    "student",
+    "assignment",
+    "declaration",
+    "entries",
+    "audit_log",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "RTP" },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+      }
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "student": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "course"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "course": { "type": "string", "minLength": 1, "maxLength": 20 }
+      }
+    },
+    "declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "version", "accepted_at"],
+      "properties": {
+        "accepted": { "const": true },
+        "version": { "type": "string", "minLength": 1 },
+        "accepted_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "audit_log": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/auditEvent" }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "canonicalization", "entry_count", "chain_head", "record_hash"],
+      "properties": {
+        "algorithm": { "const": "SHA-256" },
+        "canonicalization": { "const": "json-sorted-keys-v1" },
+        "entry_count": { "type": "integer", "minimum": 1 },
+        "chain_head": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "record_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sequence",
+        "occurred_at",
+        "recorded_at",
+        "model",
+        "attachments",
+        "prompt",
+        "prev_hash",
+        "hash"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^e-[0-9]{4}$" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "recorded_at": { "type": "string", "format": "date-time" },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "access"],
+          "properties": {
+            "provider": { "type": "string", "maxLength": 80 },
+            "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+            "access": { "enum": ["free", "paid"] }
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "size_bytes", "mime_type", "sha256"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+              "size_bytes": { "type": "integer", "minimum": 0 },
+              "mime_type": { "type": "string", "minLength": 1, "maxLength": 120 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 100000 },
+        "prev_hash": { "type": "string", "pattern": "^(GENESIS|[a-f0-9]{64})$" },
+        "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "auditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "at"],
+      "properties": {
+        "type": {
+          "enum": [
+            "entry_created",
+            "entry_updated",
+            "entry_deleted",
+            "entry_restored",
+            "record_created",
+            "record_updated",
+            "record_imported",
+            "record_reset"
+          ]
+        },
+        "at": { "type": "string", "format": "date-time" },
+        "entry_id": { "type": "string", "pattern": "^e-[0-9]{4}$" },
+        "changed_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source": { "type": "string" },
+        "chain_valid": { "type": "boolean" },
+        "record_hash_valid": { "type": "boolean" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

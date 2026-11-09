@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "tool": {
+    "name": "RTP",
+    "version": "1.0.0"
+  },
+  "exported_at": "2026-11-09T18:42:11.000Z",
+  "student": {
+    "id": "e.romero",
+    "name": "Eugenio Romero Ciudad"
+  },
+  "assignment": {
+    "id": "GSyA-2026-P1",
+    "title": "Trabajo de investigación teórica",
+    "course": "2026/27"
+  },
+  "declaration": {
+    "accepted": true,
+    "version": "1.0",
+    "accepted_at": "2026-11-09T17:00:00.000Z"
+  },
+  "entries": [
+    {
+      "id": "e-0001",
+      "sequence": 1,
+      "occurred_at": "2026-11-09T17:05:00+01:00",
+      "recorded_at": "2026-11-09T17:05:31.000Z",
+      "model": {
+        "provider": "OpenAI",
+        "name": "GPT-4o",
+        "access": "paid"
+      },
+      "attachments": [
+        {
+          "name": "apuntes_tema3.pdf",
+          "size_bytes": 182734,
+          "mime_type": "application/pdf",
+          "sha256": "0b9a25db7ce39c425368dc25bf33370b7327e656ed7fdff9d556994e699b2df6"
+        }
+      ],
+      "prompt": "Actúa como revisor académico. A partir de estos apuntes, identifica las tres ideas principales sobre evaluación procesal y señala qué evidencias faltan para sostener cada una.",
+      "prev_hash": "GENESIS",
+      "hash": "8dbef82d8fbd8feb0475189269f8ab310c879a02764404723aab5b3f65ebf64f"
+    },
+    {
+      "id": "e-0002",
+      "sequence": 2,
+      "occurred_at": "2026-11-09T17:12:00+01:00",
+      "recorded_at": "2026-11-09T17:12:40.000Z",
+      "model": {
+        "provider": "OpenAI",
+        "name": "GPT-4o",
+        "access": "paid"
+      },
+      "attachments": [],
+      "prompt": "La afirmación anterior sobre la validez de los detectores de IA es demasiado general. Corrige el argumento y cita al menos dos limitaciones metodológicas que deberían aparecer en la memoria.",
+      "prev_hash": "8dbef82d8fbd8feb0475189269f8ab310c879a02764404723aab5b3f65ebf64f",
+      "hash": "545bb4a14017982fe8362f37718c39975095defbd5164dfb9804fef0007aa0b3"
+    },
+    {
+      "id": "e-0003",
+      "sequence": 3,
+      "occurred_at": "2026-11-09T17:20:00+01:00",
+      "recorded_at": "2026-11-09T17:20:22.000Z",
+      "model": {
+        "provider": "Anthropic",
+        "name": "Claude 3.5 Sonnet",
+        "access": "free"
+      },
+      "attachments": [],
+      "prompt": "Compara las dos posturas anteriores y propone una síntesis de 120 palabras que pueda incluirse en el apartado de discusión, manteniendo las referencias y sin añadir afirmaciones nuevas.",
+      "prev_hash": "545bb4a14017982fe8362f37718c39975095defbd5164dfb9804fef0007aa0b3",
+      "hash": "71ed801dfc6eb7e84a6be95fa8f6186380516e4c4ecc69148d2ebbb1147f35bf"
+    }
+  ],
+  "audit_log": [
+    {
+      "type": "record_created",
+      "at": "2026-11-09T17:00:00.000Z"
+    },
+    {
+      "type": "entry_created",
+      "at": "2026-11-09T17:05:31.000Z",
+      "entry_id": "e-0001"
+    },
+    {
+      "type": "entry_created",
+      "at": "2026-11-09T17:12:40.000Z",
+      "entry_id": "e-0002"
+    },
+    {
+      "type": "entry_created",
+      "at": "2026-11-09T17:20:22.000Z",
+      "entry_id": "e-0003"
+    }
+  ],
+  "integrity": {
+    "algorithm": "SHA-256",
+    "canonicalization": "json-sorted-keys-v1",
+    "entry_count": 3,
+    "chain_head": "71ed801dfc6eb7e84a6be95fa8f6186380516e4c4ecc69148d2ebbb1147f35bf",
+    "record_hash": "7722e31b81568dfbe219de3f41e16eed3c678b3ea3a56cf6db51aff5455452a5"
+  }
+}
