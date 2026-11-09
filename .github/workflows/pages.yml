@@ -1,8 +1,10 @@
 name: Publicar RTP en GitHub Pages
 
+# Publicación alternativa con GitHub Actions.
+# La vía principal es "Deploy from a branch" (rama master, carpeta /), que no
+# consume minutos de Actions. Este flujo solo se lanza a mano y requiere que
+# Settings → Pages → Source sea "GitHub Actions".
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
 
 permissions:

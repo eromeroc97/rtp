@@ -24,11 +24,18 @@ y visitar <http://localhost:8080>.
 
 ### Publicar en GitHub Pages
 
+La aplicación es estática, así que GitHub Pages puede publicarla directamente desde la rama, sin ejecutar GitHub Actions.
+
 1. Crea un repositorio con el contenido de esta carpeta como raíz.
 2. Sube el proyecto a la rama `main` o `master`.
-3. En **Settings → Pages**, selecciona **GitHub Actions** como origen.
-4. El flujo `.github/workflows/pages.yml` publicará solo `index.html` y `assets/`.
-5. La URL resultante será `https://<usuario>.github.io/<repositorio>/`.
+3. En **Settings → Pages**, en **Source**, elige **Deploy from a branch**.
+4. Selecciona la rama (`main` o `master`) y la carpeta `/ (root)`.
+5. Guarda. GitHub publica el contenido de la raíz y el archivo `.nojekyll` evita que Jekyll procese el sitio.
+6. La URL resultante será `https://<usuario>.github.io/<repositorio>/`.
+
+Cada `push` a esa rama actualiza la web automáticamente.
+
+> **Alternativa con GitHub Actions.** El flujo `.github/workflows/pages.yml` publica solo `index.html` y `assets/`. Está limitado a ejecución manual (`workflow_dispatch`) porque requiere que la cuenta tenga Actions operativo y que **Settings → Pages → Source** sea **GitHub Actions**. Para volver a usarlo, cambia el origen a **GitHub Actions** y añade `push` al disparador del flujo.
 
 ---
 
@@ -230,7 +237,8 @@ npm run example
 ├── examples/ejemplo-traza.json # Registro de ejemplo válido
 ├── scripts/generate-example.cjs
 ├── tests/                      # Pruebas con node:test
-├── .github/workflows/pages.yml # Publicación en GitHub Pages
+├── .nojekyll                   # Evita el procesado Jekyll en GitHub Pages
+├── .github/workflows/pages.yml # Publicación alternativa con GitHub Actions
 └── package.json
 ```
 
