@@ -169,7 +169,7 @@
         <div class="field">
           <label for="entry-attachments">Archivos adjuntos <span class="optional">(opcional)</span></label>
           <input id="entry-attachments" name="attachments" type="file" multiple>
-          <p class="hint">Solo se guardan nombre, tamaño, tipo y huella SHA-256. El archivo no se lee ni se sube a ningún sitio.</p>
+          <p class="hint">El contenido se comprime y se incrusta en el JSON para poder recuperarlo después. No se cifra: cualquiera con el archivo puede extraerlo. Máximo 10 MB por archivo y 50 MB por registro.</p>
           <p id="attachment-status" class="hint" role="status" aria-live="polite"></p>
           <ul id="attachment-list" class="attachment-list"></ul>
         </div>
@@ -255,8 +255,10 @@
           <li>Registra cada interacción con la IA: modelo, tipo de acceso, adjuntos y el prompt exacto.</li>
           <li>Exporta el JSON al terminar y entrégalo junto con la memoria. Si más adelante necesitas continuar un registro, usa «Cargar JSON» para recuperarlo y seguir añadiendo iteraciones.</li>
         </ol>
+        <p class="hint">Los adjuntos se guardan comprimidos dentro del JSON y puedes descargarlos de nuevo desde la línea de tiempo con el botón «Descargar». Los registros antiguos que solo conservan la huella se marcan como «Solo huella».</p>
         <p class="hint">El panel «Ver JSON» muestra una vista previa en vivo. Copiar no marca el registro como exportado; descargar sí.</p>
-        <p class="hint">Todo se guarda en tu navegador. RTP no envía datos a ningún servidor. La huella SHA-256 de los adjuntos se calcula en local y no se lee el contenido.</p>
+        <p class="hint">Todo se guarda en tu navegador. RTP no envía datos a ningún servidor. Los adjuntos se comprimen con gzip y se incrustan en el JSON para que puedas recuperarlos; no se cifran.</p>
+        <p class="hint">Cada adjunto incrustado ocupa espacio en el JSON y añade aproximadamente un 33 % por la codificación base64. Los archivos ya comprimidos pueden no reducirse.</p>
         <p class="hint">La cadena de integridad permite detectar ediciones posteriores a la exportación, pero no sustituye a la defensa oral ni a la revisión docente.</p>
       </div>
       <footer class="dialog-footer">
@@ -273,6 +275,7 @@
   <script src="./assets/sha256.js"></script>
   <script src="./assets/chain.js"></script>
   <script src="./assets/validate.js"></script>
+  <script src="./assets/attachments.js"></script>
   <script src="./assets/app.js"></script>
 </body>
 </html>

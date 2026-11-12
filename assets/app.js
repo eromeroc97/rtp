@@ -2,15 +2,17 @@
   'use strict';
 
   const CONFIG = window.RTP_CONFIG;
-  const Hash = window.RTPHash;
   const Chain = window.RTPChain;
   const Validate = window.RTPValidate;
+  const Attachments = window.RTPAttachments;
 
   const STORAGE_KEY = 'rtp:v1:draft';
   const UI_KEY = 'rtp:v1:ui';
   const FORM_DRAFT_KEY = 'rtp:v1:form-draft';
   const THEME_KEY = 'rtp:v1:theme';
   const THEMES = ['light', 'dark', 'system'];
+  const DRAFT_CONTENT_BUDGET = CONFIG.limits.maxDraftContentMB * 1024 * 1024;
+  const LIVE_JSON_BUDGET = CONFIG.limits.maxLiveJsonMB * 1024 * 1024;
 
   const state = {
     record: null,
@@ -33,7 +35,9 @@
     jsonRefreshTimer: null,
     jsonRefreshToken: 0,
     liveJsonRecord: null,
-    liveJsonValid: false
+    liveJsonValid: false,
+    draftContentOmitted: false,
+    draftFallbackNotified: false
   };
 
   const els = {};
@@ -244,6 +248,7 @@
         state.loadedFromFile = Boolean(parsedUi.loadedFromFile);
         state.loadedFileName = typeof parsedUi.loadedFileName === 'string' ? parsedUi.loadedFileName : '';
         state.loadedAt = typeof parsedUi.loadedAt === 'string' ? parsedUi.loadedAt : null;
+        state.draftContentOmitted = Boolean(parsedUi.draftContentOmitted);
       } catch (err) {
         // Ignoramos un estado de UI corrupto.
       }
@@ -252,7 +257,8 @@
     if (storedRecord) {
       try {
         const parsed = JSON.parse(storedRecord);
-        if (parsed && parsed.schema_version === CONFIG.schemaVersion) {
+        const supported = CONFIG.supportedSchemaVersions || [CONFIG.schemaVersion];
+        if (parsed && supported.includes(parsed.schema_version)) {
           state.record = normalizeInternalRecord(parsed);
           state.view = isSetupComplete(state.record) ? 'main' : 'setup';
           state.setupMode = state.view === 'setup' ? 'edit' : 'create';
@@ -317,12 +323,7 @@
       attachments: Array.isArray(entry.attachments)
         ? entry.attachments
             .filter((attachment) => attachment && typeof attachment === 'object')
-            .map((attachment) => ({
-              name: typeof attachment.name === 'string' ? attachment.name : '',
-              size_bytes: Number.isInteger(attachment.size_bytes) ? attachment.size_bytes : 0,
-              mime_type: typeof attachment.mime_type === 'string' ? attachment.mime_type : 'application/octet-stream',
-              sha256: typeof attachment.sha256 === 'string' ? attachment.sha256 : ''
-            }))
+            .map(normalizeInternalAttachment)
         : [],
       prompt: typeof entry.prompt === 'string' ? entry.prompt : ''
     };
@@ -332,6 +333,78 @@
     }
 
     return normalized;
+  }
+
+  function normalizeInternalAttachment(attachment) {
+    const normalized = {
+      name: typeof attachment.name === 'string' ? attachment.name : '',
+      size_bytes: Number.isInteger(attachment.size_bytes) ? attachment.size_bytes : 0,
+      mime_type: typeof attachment.mime_type === 'string' ? attachment.mime_type : 'application/octet-stream',
+      sha256: typeof attachment.sha256 === 'string' ? attachment.sha256 : ''
+    };
+
+    if (attachment.content && typeof attachment.content === 'object') {
+      const content = attachment.content;
+      normalized.content = {
+        encoding: typeof content.encoding === 'string' ? content.encoding : '',
+        compression: typeof content.compression === 'string' ? content.compression : '',
+        original_size_bytes: Number.isInteger(content.original_size_bytes) ? content.original_size_bytes : 0,
+        compressed_size_bytes: Number.isInteger(content.compressed_size_bytes)
+          ? content.compressed_size_bytes
+          : 0,
+        compressed_sha256: typeof content.compressed_sha256 === 'string' ? content.compressed_sha256 : '',
+        data: typeof content.data === 'string' ? content.data : ''
+      };
+    }
+
+    return normalized;
+  }
+
+  function cloneAttachment(attachment) {
+    return normalizeInternalAttachment(attachment);
+  }
+
+  function attachmentContentChars(entries) {
+    let total = 0;
+    if (!Array.isArray(entries)) {
+      return total;
+    }
+    for (const entry of entries) {
+      if (!entry || !Array.isArray(entry.attachments)) {
+        continue;
+      }
+      for (const attachment of entry.attachments) {
+        if (attachment && attachment.content && typeof attachment.content.data === 'string') {
+          total += attachment.content.data.length;
+        }
+      }
+    }
+    return total;
+  }
+
+  function recordWithoutAttachmentContent(record) {
+    return Object.assign({}, record, {
+      entries: (record.entries || []).map((entry) =>
+        Object.assign({}, entry, {
+          attachments: (entry.attachments || []).map((attachment) => {
+            const copy = Object.assign({}, attachment);
+            delete copy.content;
+            return copy;
+          })
+        })
+      )
+    });
+  }
+
+  function buildUiState() {
+    return {
+      lastExportAt: state.lastExportAt,
+      dirtySinceExport: state.dirtySinceExport,
+      loadedFromFile: state.loadedFromFile,
+      loadedFileName: state.loadedFileName,
+      loadedAt: state.loadedAt,
+      draftContentOmitted: state.draftContentOmitted
+    };
   }
 
   function isSetupComplete(record) {
@@ -353,27 +426,49 @@
     if (!state.storageAvailable) {
       return;
     }
+
+    const contentChars = attachmentContentChars(state.record.entries);
+    const overBudget = contentChars > DRAFT_CONTENT_BUDGET;
+    const previousOmitted = state.draftContentOmitted;
+    const ui = buildUiState();
+
+    const persist = (record, omitted) => {
+      state.draftContentOmitted = omitted;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+      localStorage.setItem(UI_KEY, JSON.stringify(Object.assign({}, ui, { draftContentOmitted: omitted })));
+    };
+
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.record));
-      localStorage.setItem(
-        UI_KEY,
-        JSON.stringify({
-          lastExportAt: state.lastExportAt,
-          dirtySinceExport: state.dirtySinceExport,
-          loadedFromFile: state.loadedFromFile,
-          loadedFileName: state.loadedFileName,
-          loadedAt: state.loadedAt
-        })
-      );
+      if (overBudget) {
+        persist(recordWithoutAttachmentContent(state.record), true);
+      } else {
+        persist(state.record, false);
+      }
     } catch (err) {
-      state.storageAvailable = false;
-      showToast(
-        'No se pudo guardar en el navegador. Exporta el JSON antes de cerrar la pestaña.',
-        'error',
-        10000
-      );
-      renderStatus();
+      try {
+        persist(recordWithoutAttachmentContent(state.record), true);
+      } catch (fallbackErr) {
+        state.storageAvailable = false;
+        showToast(
+          'No se pudo guardar en el navegador. Exporta el JSON antes de cerrar la pestaña.',
+          'error',
+          10000
+        );
+        renderStatus();
+        return;
+      }
     }
+
+    if (state.draftContentOmitted && !previousOmitted && !state.draftFallbackNotified) {
+      state.draftFallbackNotified = true;
+      showToast(
+        'El borrador del navegador no incluye el contenido de todos los adjuntos por falta de espacio. El registro sigue en memoria y el JSON exportado sí los incluirá; exporta antes de cerrar.',
+        'warning',
+        12000
+      );
+    }
+
+    renderStatus();
   }
 
   function setDirty() {
@@ -446,6 +541,9 @@
     const free = entries.filter((entry) => entry.model.access === 'free').length;
     const paid = entries.filter((entry) => entry.model.access === 'paid').length;
     const attachments = entries.reduce((total, entry) => total + entry.attachments.length, 0);
+    const attachmentSummary = Attachments
+      ? Attachments.summarizeAttachments(entries)
+      : { recoverable: 0, withoutContent: 0 };
 
     const chips = [
       ['Iteraciones', entries.length],
@@ -454,6 +552,10 @@
       ['De pago', paid],
       ['Adjuntos', attachments]
     ];
+
+    if (attachments > 0) {
+      chips.push(['Recuperables', attachmentSummary.recoverable]);
+    }
 
     for (const [label, value] of chips) {
       els.stats.append(
@@ -492,6 +594,18 @@
       els.statusBar.classList.add('is-success');
     } else {
       els.statusBar.textContent = 'Registro en curso. Exporta el JSON cuando termines.';
+    }
+
+    if (state.draftContentOmitted) {
+      els.statusBar.textContent +=
+        ' Aviso: el borrador guardado en el navegador no incluye el contenido de todos los adjuntos. El JSON exportado sí los incluye; expórtalo antes de cerrar.';
+      els.statusBar.classList.add('is-warning');
+    }
+
+    const attachmentSummary = Attachments ? Attachments.summarizeAttachments(entries) : null;
+    if (attachmentSummary && attachmentSummary.withoutContent > 0) {
+      els.statusBar.textContent += ` ${attachmentSummary.withoutContent} adjunto(s) solo conservan la huella y no se pueden descargar.`;
+      els.statusBar.classList.add('is-warning');
     }
 
     if (!state.storageAvailable) {
@@ -538,11 +652,7 @@
       if (entry.attachments.length > 0) {
         const attachmentList = el('ul', { class: 'entry-attachments' });
         for (const attachment of entry.attachments) {
-          attachmentList.append(
-            el('li', {
-              text: `${attachment.name} · ${formatBytes(attachment.size_bytes)} · ${attachment.mime_type} · ${attachment.sha256.slice(0, 12)}…`
-            })
-          );
+          attachmentList.append(renderTimelineAttachment(attachment));
         }
         details.append(el('h3', { class: 'details-title', text: 'Adjuntos' }), attachmentList);
       }
@@ -573,6 +683,84 @@
     });
   }
 
+  function formatAttachmentMeta(attachment) {
+    const parts = [formatBytes(attachment.size_bytes), attachment.mime_type];
+    if (attachment.content) {
+      const content = attachment.content;
+      const algorithm = content.compression === 'gzip' ? 'gzip' : 'sin compresión';
+      parts.push(`${algorithm} · ${formatBytes(content.compressed_size_bytes)}`);
+      if (content.compression === 'gzip' && attachment.size_bytes > 0) {
+        const ratio = Math.round((content.compressed_size_bytes / attachment.size_bytes) * 100);
+        parts.push(`${ratio}% del original`);
+      }
+    }
+    parts.push(`SHA-256 ${attachment.sha256.slice(0, 12)}…`);
+    return parts.join(' · ');
+  }
+
+  function renderTimelineAttachment(attachment) {
+    const recoverable = Boolean(attachment.content);
+    const info = el('div', { class: 'attachment-entry-info' }, [
+      el('span', { class: 'attachment-name', text: attachment.name }),
+      el('span', { class: 'attachment-meta', text: formatAttachmentMeta(attachment) })
+    ]);
+
+    const actions = el('div', { class: 'attachment-entry-actions' }, [
+      el('span', {
+        class: `badge attachment-badge ${recoverable ? 'is-recoverable' : 'is-hash-only'}`,
+        text: recoverable ? 'Recuperable' : 'Solo huella'
+      })
+    ]);
+
+    if (recoverable) {
+      actions.append(
+        el('button', {
+          type: 'button',
+          class: 'btn btn-ghost btn-sm',
+          text: 'Descargar',
+          onclick: () => downloadAttachment(attachment)
+        })
+      );
+    }
+
+    return el('li', { class: 'attachment-entry' }, [info, actions]);
+  }
+
+  async function downloadAttachment(attachment) {
+    if (!Attachments) {
+      showToast('La recuperación de adjuntos no está disponible.', 'error');
+      return;
+    }
+    try {
+      const result = await Attachments.decodeAttachment(attachment);
+      if (!result.valid) {
+        showToast(
+          `No se pudo recuperar «${attachment.name}»: ${Attachments.translateReason(result.reason)}.`,
+          'error',
+          8000
+        );
+        return;
+      }
+      downloadBytes(attachment.name, result.bytes, attachment.mime_type);
+      showToast(`Adjunto «${attachment.name}» descargado.`, 'success');
+    } catch (err) {
+      showToast(`No se pudo recuperar «${attachment.name}».`, 'error', 8000);
+    }
+  }
+
+  function downloadBytes(name, bytes, mimeType) {
+    const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = name || 'adjunto';
+    anchor.rel = 'noopener';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
   function renderAttachmentList() {
     els.attachmentList.replaceChildren();
     state.currentAttachments.forEach((attachment, index) => {
@@ -581,7 +769,11 @@
           el('span', { class: 'attachment-name', text: attachment.name }),
           el('span', {
             class: 'attachment-meta',
-            text: `${formatBytes(attachment.size_bytes)} · ${attachment.sha256.slice(0, 12)}…`
+            text: formatAttachmentMeta(attachment)
+          }),
+          el('span', {
+            class: `badge attachment-badge ${attachment.content ? 'is-recoverable' : 'is-hash-only'}`,
+            text: attachment.content ? 'Recuperable' : 'Solo huella'
           }),
           el('button', {
             type: 'button',
@@ -837,7 +1029,7 @@
         accessInput.checked = true;
       }
       els.entryPrompt.value = entry.prompt;
-      state.currentAttachments = entry.attachments.map((attachment) => Object.assign({}, attachment));
+      state.currentAttachments = entry.attachments.map((attachment) => cloneAttachment(attachment));
     } else {
       els.entryDialogTitle.textContent = 'Nueva iteración';
       els.entryOccurred.value = isoToLocalInput(new Date().toISOString());
@@ -851,7 +1043,7 @@
           accessInput.checked = true;
         }
         els.entryPrompt.value = prefill.prompt;
-        state.currentAttachments = prefill.attachments.map((attachment) => Object.assign({}, attachment));
+        state.currentAttachments = prefill.attachments.map((attachment) => cloneAttachment(attachment));
       } else {
         const restored = restoreFormDraft();
         if (restored) {
@@ -962,7 +1154,7 @@
         name: modelName,
         access
       },
-      attachments: state.currentAttachments.map((attachment) => Object.assign({}, attachment)),
+      attachments: state.currentAttachments.map((attachment) => cloneAttachment(attachment)),
       prompt
     };
     if (provider) {
@@ -976,7 +1168,7 @@
       if (existing.model.name !== entry.model.name) changedFields.push('model.name');
       if ((existing.model.provider || '') !== (entry.model.provider || '')) changedFields.push('model.provider');
       if (existing.model.access !== entry.model.access) changedFields.push('model.access');
-      if (JSON.stringify(existing.attachments) !== JSON.stringify(entry.attachments)) changedFields.push('attachments');
+      if (!attachmentsEquivalent(existing.attachments, entry.attachments)) changedFields.push('attachments');
 
       const index = state.record.entries.findIndex((item) => item.id === entryId);
       state.record.entries[index] = entry;
@@ -1062,6 +1254,31 @@
     return entries.slice().sort((a, b) => Date.parse(a.occurred_at) - Date.parse(b.occurred_at));
   }
 
+  function attachmentSignature(attachment) {
+    return JSON.stringify([
+      attachment.name,
+      attachment.size_bytes,
+      attachment.mime_type,
+      attachment.sha256,
+      attachment.content ? attachment.content.compression : null,
+      attachment.content ? attachment.content.compressed_sha256 : null
+    ]);
+  }
+
+  function attachmentsEquivalent(first, second) {
+    const a = Array.isArray(first) ? first : [];
+    const b = Array.isArray(second) ? second : [];
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i += 1) {
+      if (attachmentSignature(a[i]) !== attachmentSignature(b[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   async function handleAttachmentChange(event) {
     const files = Array.from(event.target.files || []);
     event.target.value = '';
@@ -1069,7 +1286,13 @@
       return;
     }
 
+    if (!Attachments) {
+      showToast('La compresión de adjuntos no está disponible en este navegador.', 'error');
+      return;
+    }
+
     const maxBytes = CONFIG.limits.maxAttachmentMB * 1024 * 1024;
+    const maxTotalBytes = CONFIG.limits.maxTotalAttachmentMB * 1024 * 1024;
     const remaining = CONFIG.limits.maxAttachmentsPerEntry - state.currentAttachments.length;
     if (remaining <= 0) {
       showToast(`No puedes añadir más de ${CONFIG.limits.maxAttachmentsPerEntry} adjuntos por iteración.`, 'error');
@@ -1081,9 +1304,19 @@
       showToast(`Solo se añadirán ${remaining} archivo(s); se alcanzó el límite de adjuntos.`, 'warning');
     }
 
+    const otherEntriesBytes = state.record.entries.reduce((total, entry) => {
+      if (entry.id === state.editingEntryId) {
+        return total;
+      }
+      return total + entry.attachments.reduce((sum, attachment) => sum + (attachment.size_bytes || 0), 0);
+    }, 0);
+    let totalBytes =
+      otherEntriesBytes +
+      state.currentAttachments.reduce((sum, attachment) => sum + (attachment.size_bytes || 0), 0);
+
     state.hashing = true;
     els.btnSaveEntry.disabled = true;
-    els.attachmentStatus.textContent = 'Calculando huella SHA-256…';
+    els.attachmentStatus.textContent = 'Comprimiendo y calculando huellas SHA-256…';
 
     try {
       for (const file of selected) {
@@ -1091,19 +1324,30 @@
           showToast(`«${file.name}» supera el límite de ${CONFIG.limits.maxAttachmentMB} MB y se ha omitido.`, 'error', 6000);
           continue;
         }
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const sha256 = await Hash.sha256Hex(bytes);
-        state.currentAttachments.push({
-          name: file.name,
-          size_bytes: file.size,
-          mime_type: file.type || 'application/octet-stream',
-          sha256
-        });
+        if (totalBytes + file.size > maxTotalBytes) {
+          showToast(
+            `«${file.name}» supera el límite total de ${CONFIG.limits.maxTotalAttachmentMB} MB por registro y se ha omitido.`,
+            'error',
+            7000
+          );
+          continue;
+        }
+
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const encoded = await Attachments.encodeAttachment({
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            bytes
+          });
+          state.currentAttachments.push(encoded);
+          totalBytes += encoded.size_bytes;
+        } catch (err) {
+          showToast(`No se pudo procesar «${file.name}».`, 'error', 6000);
+        }
       }
       renderAttachmentList();
       saveFormDraftSoon();
-    } catch (err) {
-      showToast('No se pudo calcular la huella de uno de los archivos.', 'error');
     } finally {
       state.hashing = false;
       els.btnSaveEntry.disabled = false;
@@ -1128,7 +1372,8 @@
         return false;
       }
       const draft = JSON.parse(raw);
-      if (!draft || draft.version !== CONFIG.schemaVersion) {
+      const supported = CONFIG.supportedSchemaVersions || [CONFIG.schemaVersion];
+      if (!draft || !supported.includes(draft.version)) {
         return false;
       }
       let restored = false;
@@ -1247,6 +1492,18 @@
       return null;
     }
 
+    if (Attachments) {
+      const attachmentCheck = await Attachments.verifyRecordAttachments(state.record.entries);
+      if (!attachmentCheck.valid) {
+        showErrorsDialog(
+          'Los adjuntos no se pueden recuperar',
+          'El contenido incrustado de uno o más adjuntos no supera la verificación. Corrige o vuelve a adjuntar los archivos antes de exportar.',
+          attachmentCheck.issues
+        );
+        return null;
+      }
+    }
+
     const record = await buildExportRecord();
     const validation = Validate.validateRecord(record);
     if (!validation.valid) {
@@ -1294,7 +1551,16 @@
     try {
       const record = await exportRecord();
       if (record) {
-        showToast('JSON exportado correctamente.', 'success');
+        const summary = Attachments ? Attachments.summarizeAttachments(record.entries) : null;
+        if (summary && summary.withoutContent > 0) {
+          showToast(
+            `JSON exportado. ${summary.withoutContent} adjunto(s) solo conservan la huella y no se podrán recuperar del archivo.`,
+            'warning',
+            9000
+          );
+        } else {
+          showToast('JSON exportado correctamente.', 'success');
+        }
       }
     } catch (err) {
       showToast('No se pudo generar el JSON. Inténtalo de nuevo.', 'error', 8000);
@@ -1307,7 +1573,23 @@
       if (!record) {
         return;
       }
+      if (attachmentContentChars(record.entries) > LIVE_JSON_BUDGET) {
+        showToast(
+          'El registro es demasiado grande para copiarlo al portapapeles. Usa «Exportar JSON» para descargarlo.',
+          'warning',
+          9000
+        );
+        return;
+      }
       const text = JSON.stringify(record, null, 2);
+      if (text.length > LIVE_JSON_BUDGET) {
+        showToast(
+          'El registro es demasiado grande para copiarlo al portapapeles. Usa «Exportar JSON» para descargarlo.',
+          'warning',
+          9000
+        );
+        return;
+      }
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
         showToast('JSON copiado al portapapeles.', 'success');
@@ -1315,6 +1597,14 @@
         showJsonDialog(text);
       }
     } catch (err) {
+      if (attachmentContentChars(state.record.entries) > LIVE_JSON_BUDGET) {
+        showToast(
+          'El registro es demasiado grande para mostrarlo o copiarlo. Usa «Exportar JSON» para descargarlo.',
+          'warning',
+          9000
+        );
+        return;
+      }
       showToast('No se pudo copiar el JSON. Se muestra en una ventana para copiarlo manualmente.', 'warning', 6000);
       try {
         const record = await buildExportRecord();
@@ -1391,7 +1681,10 @@
 
     const chainResult = await Chain.verifyChain(parsed.entries);
     const recordHashValid = await Chain.verifyRecordHash(parsed);
-    const integrityValid = chainResult.valid && recordHashValid;
+    const attachmentResult = Attachments
+      ? await Attachments.verifyRecordAttachments(parsed.entries)
+      : { valid: true, issues: [], total: 0, recoverable: 0, withoutContent: 0 };
+    const integrityValid = chainResult.valid && recordHashValid && attachmentResult.valid;
 
     const hasCurrentData = state.record.entries.length > 0 || state.dirtySinceExport;
     const integrityWarnings = [];
@@ -1402,6 +1695,11 @@
     }
     if (!recordHashValid) {
       integrityWarnings.push('El hash global del registro no coincide.');
+    }
+    if (!attachmentResult.valid) {
+      integrityWarnings.push(
+        `El contenido de ${attachmentResult.issues.length} adjunto(s) no supera la verificación.`
+      );
     }
 
     let message;
@@ -1427,7 +1725,7 @@
           ? 'Reemplazar el registro actual'
           : 'Cargar registro desde archivo',
       message,
-      details: buildImportSummary(parsed, file.name, integrityValid),
+      details: buildImportSummary(parsed, file.name, integrityValid, attachmentResult),
       okLabel: !integrityValid
         ? 'Cargar de todos modos'
         : hasCurrentData
@@ -1446,6 +1744,7 @@
       source: 'file',
       chain_valid: chainResult.valid,
       record_hash_valid: recordHashValid,
+      attachments_valid: attachmentResult.valid,
       ...(integrityValid
         ? {}
         : { note: 'Importado con verificación de integridad incompleta mediante confirmación explícita.' })
@@ -1464,7 +1763,7 @@
     showToast(`Registro cargado desde «${file.name}». Puedes seguir añadiendo iteraciones.`, 'success', 6000);
   }
 
-  function buildImportSummary(record, fileName, integrityValid) {
+  function buildImportSummary(record, fileName, integrityValid, attachmentResult) {
     const entries = Array.isArray(record.entries) ? record.entries : [];
     const models = Array.from(
       new Set(entries.map((entry) => entry && entry.model && entry.model.name).filter(Boolean))
@@ -1476,17 +1775,29 @@
     const student = record.student && record.student.id ? record.student.id : '—';
     const studentName = record.student && record.student.name ? ` (${record.student.name})` : '';
     const assignment = record.assignment || {};
+    const attachmentInfo = attachmentResult || { recoverable: 0, withoutContent: attachments, issues: [] };
 
-    return [
+    const lines = [
       `Archivo: ${fileName}`,
       `Estudiante: ${student}${studentName}`,
       `Trabajo: ${assignment.id || '—'} · ${assignment.title || '—'} · Curso ${assignment.course || '—'}`,
       `Iteraciones: ${entries.length}`,
       `Modelos: ${models.length > 0 ? models.join(', ') : '—'}`,
-      `Adjuntos: ${attachments}`,
+      `Adjuntos: ${attachments} (${attachmentInfo.recoverable} recuperables, ${attachmentInfo.withoutContent} solo huella)`,
       `Exportado: ${record.exported_at ? formatDate(record.exported_at) : 'sin fecha'}`,
       `Integridad: ${integrityValid ? 'cadena y hash global verificados' : 'no verificada'}`
     ];
+
+    if (attachmentInfo.issues && attachmentInfo.issues.length > 0) {
+      for (const issue of attachmentInfo.issues.slice(0, 3)) {
+        lines.push(`Contenido: ${issue.message}`);
+      }
+      if (attachmentInfo.issues.length > 3) {
+        lines.push(`Contenido: y ${attachmentInfo.issues.length - 3} incidencia(s) más.`);
+      }
+    }
+
+    return lines;
   }
 
   function translateChainReason(reason) {
@@ -1540,6 +1851,8 @@
     state.loadedAt = null;
     state.liveJsonRecord = null;
     state.liveJsonValid = false;
+    state.draftContentOmitted = false;
+    state.draftFallbackNotified = false;
     render();
     showToast('Registro borrado. Puedes empezar uno nuevo.', 'success');
   }
@@ -1699,6 +2012,18 @@
 
       state.liveJsonRecord = record;
       state.liveJsonValid = validation.valid && chainValid && hashValid;
+      const contentChars = attachmentContentChars(record.entries);
+      if (contentChars > LIVE_JSON_BUDGET) {
+        els.jsonText.value = '';
+        setLiveJsonButtons(false);
+        if (state.liveJsonValid) {
+          els.btnDownloadLiveJson.disabled = false;
+        }
+        els.jsonStatus.className = 'json-status is-warning';
+        els.jsonStatus.textContent =
+          'El registro incluye adjuntos demasiado grandes para mostrarlos en la vista previa. Puedes descargarlo con «Descargar» o «Exportar JSON».';
+        return;
+      }
       els.jsonText.value = JSON.stringify(record, null, 2);
 
       if (state.liveJsonValid) {
@@ -1733,6 +2058,17 @@
       return;
     }
     const text = els.jsonText.value;
+    if (!text) {
+      return;
+    }
+    if (text.length > LIVE_JSON_BUDGET) {
+      showToast(
+        'La vista previa es demasiado grande para copiarla. Usa «Exportar JSON» para descargarla.',
+        'warning',
+        9000
+      );
+      return;
+    }
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
@@ -1764,7 +2100,16 @@
     try {
       const record = await exportRecord();
       if (record) {
-        showToast('JSON exportado correctamente.', 'success');
+        const summary = Attachments ? Attachments.summarizeAttachments(record.entries) : null;
+        if (summary && summary.withoutContent > 0) {
+          showToast(
+            `JSON exportado. ${summary.withoutContent} adjunto(s) solo conservan la huella y no se podrán recuperar del archivo.`,
+            'warning',
+            9000
+          );
+        } else {
+          showToast('JSON exportado correctamente.', 'success');
+        }
       }
     } catch (err) {
       showToast('No se pudo generar el JSON. Inténtalo de nuevo.', 'error', 8000);

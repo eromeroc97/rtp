@@ -9,10 +9,11 @@ const { webcrypto, createHash } = require('node:crypto');
 
 const RTPChain = require('../assets/chain.js');
 const RTPValidate = require('../assets/validate.js');
+const RTPAttachments = require('../assets/attachments.js');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const scripts = ['config.js', 'sha256.js', 'chain.js', 'validate.js', 'app.js'].map((file) =>
+const scripts = ['config.js', 'sha256.js', 'chain.js', 'validate.js', 'attachments.js', 'app.js'].map((file) =>
   fs.readFileSync(path.join(root, 'assets', file), 'utf8')
 );
 
@@ -34,6 +35,9 @@ async function createApp() {
   Object.defineProperty(window, 'crypto', { value: webcrypto, configurable: true });
   window.TextEncoder = TextEncoder;
   window.TextDecoder = TextDecoder;
+  window.ReadableStream = ReadableStream;
+  window.CompressionStream = CompressionStream;
+  window.DecompressionStream = DecompressionStream;
   window.URL.createObjectURL = () => 'blob:rtp-test';
   window.URL.revokeObjectURL = () => {};
   window.HTMLAnchorElement.prototype.click = function click() {};
@@ -51,10 +55,12 @@ async function createApp() {
   };
 
   let lastDownloadText = null;
+  let lastDownloadParts = null;
   const RealBlob = window.Blob;
   window.Blob = class CapturingBlob extends RealBlob {
     constructor(parts, options) {
       super(parts, options);
+      lastDownloadParts = parts;
       lastDownloadText = parts.map(String).join('');
     }
   };
@@ -73,7 +79,8 @@ async function createApp() {
     window,
     document: window.document,
     errors: jsdomErrors,
-    getDownloadText: () => lastDownloadText
+    getDownloadText: () => lastDownloadText,
+    getDownloadParts: () => lastDownloadParts
   };
 }
 
@@ -230,6 +237,21 @@ test('la interfaz arranca, crea una iteración y exporta un JSON verificable', a
   assert.equal(stored.entries[0].attachments[0].name, 'apuntes.txt');
   assert.equal(stored.entries[0].attachments[0].size_bytes, Buffer.byteLength(attachmentContent));
   assert.equal(stored.entries[0].attachments[0].sha256, expectedSha);
+  const storedContent = stored.entries[0].attachments[0].content;
+  assert.ok(storedContent, 'el borrador debe incluir el contenido del adjunto');
+  assert.equal(storedContent.encoding, 'base64');
+  assert.ok(['gzip', 'none'].includes(storedContent.compression));
+  if (storedContent.compression === 'none') {
+    assert.equal(storedContent.compressed_sha256, stored.entries[0].attachments[0].sha256);
+  }
+  assert.equal(storedContent.original_size_bytes, Buffer.byteLength(attachmentContent));
+  assert.equal(
+    Buffer.from(storedContent.data, 'base64').length,
+    storedContent.compressed_size_bytes
+  );
+  const recovered = await RTPAttachments.decodeAttachment(stored.entries[0].attachments[0]);
+  assert.equal(recovered.valid, true);
+  assert.equal(Buffer.from(recovered.bytes).toString('utf8'), attachmentContent);
 
   document.getElementById('btn-export').click();
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -244,6 +266,8 @@ test('la interfaz arranca, crea una iteración y exporta un JSON verificable', a
   assert.equal(exported.entries[0].hash, exported.integrity.chain_head);
   assert.equal(exported.entries[0].attachments.length, 1);
   assert.equal(exported.entries[0].attachments[0].sha256, expectedSha);
+  assert.ok(exported.entries[0].attachments[0].content);
+  assert.equal(exported.schema_version, '1.1.0');
 
   const validation = RTPValidate.validateRecord(exported);
   assert.deepEqual(validation.errors, []);
@@ -632,6 +656,113 @@ test('duplicar conserva el prompt y los adjuntos', async () => {
   assert.equal(document.getElementById('entry-dialog').hasAttribute('open'), true);
   assert.equal(document.getElementById('entry-prompt').value, 'Prompt original.');
   assert.equal(document.getElementById('attachment-list').children.length, 1);
+
+  assert.deepEqual(app.errors.map(String), []);
+  window.close();
+});
+
+test('descarga el adjunto recuperado con su nombre y contenido originales', async () => {
+  const app = await createApp();
+  const { window, document } = app;
+
+  completeSetup(window, document);
+  document.getElementById('btn-new-entry').click();
+  document.getElementById('entry-occurred').value = '2021-02-01T10:00';
+  document.getElementById('entry-model').value = 'GPT-4o';
+  document.getElementById('entry-provider').value = 'OpenAI';
+  document.querySelector('input[name="access"][value="free"]').checked = true;
+  document.getElementById('entry-prompt').value = 'Prompt con adjunto.';
+
+  const content = 'Contenido recuperable del adjunto.';
+  const file = new window.File([content], 'recuperable.txt', { type: 'text/plain' });
+  const fileInput = document.getElementById('entry-attachments');
+  Object.defineProperty(fileInput, 'files', { value: [file], configurable: true });
+  fileInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  assert.match(document.getElementById('attachment-list').textContent, /Recuperable/);
+  submit(window, document.getElementById('entry-form'));
+
+  const timeline = document.getElementById('timeline');
+  assert.match(timeline.textContent, /Recuperable/);
+  const download = Array.from(timeline.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Descargar'
+  );
+  assert.ok(download, 'debe haber un botón de descarga por adjunto');
+  download.click();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  const parts = app.getDownloadParts();
+  assert.ok(parts && parts.length > 0, 'la descarga debe generar un Blob');
+  assert.equal(Buffer.from(parts[0]).toString('utf8'), content);
+
+  assert.deepEqual(app.errors.map(String), []);
+  window.close();
+});
+
+test('un registro 1.0.0 se carga y marca los adjuntos sin contenido', async () => {
+  const app = await createApp();
+  const { window, document } = app;
+  const record = await makePastRecord();
+  record.entries[0].attachments = [
+    {
+      name: 'viejo.txt',
+      size_bytes: 5,
+      mime_type: 'text/plain',
+      sha256: createHash('sha256').update('viejo').digest('hex')
+    }
+  ];
+  record.entries = await RTPChain.computeChain(record.entries);
+  record.integrity.chain_head = record.entries[record.entries.length - 1].hash;
+  record.integrity.record_hash = await RTPChain.computeRecordHash(record);
+
+  await loadJsonFile(window, document, JSON.stringify(record), 'registro-1.0.0.json');
+  assert.match(document.getElementById('confirm-details').textContent, /0 recuperables, 1 solo huella/);
+  await acceptConfirm(window, document);
+
+  assert.equal(document.getElementById('view-main').hidden, false);
+  assert.match(document.getElementById('timeline').textContent, /Solo huella/);
+  assert.equal(
+    Array.from(document.querySelectorAll('#timeline button')).some(
+      (button) => button.textContent === 'Descargar'
+    ),
+    false
+  );
+  assert.match(document.getElementById('status-bar').textContent, /solo conservan la huella/);
+
+  const stored = JSON.parse(window.localStorage.getItem('rtp:v1:draft'));
+  assert.equal(stored.schema_version, '1.1.0');
+  const importedEvent = stored.audit_log.find((event) => event.type === 'record_imported');
+  assert.equal(importedEvent.attachments_valid, true);
+
+  const exported = JSON.parse(fs.readFileSync(path.join(root, 'examples', 'ejemplo-traza.json'), 'utf8'));
+  assert.equal(RTPValidate.validateRecord(exported).valid, true);
+
+  assert.deepEqual(app.errors.map(String), []);
+  window.close();
+});
+
+test('importar con contenido de adjunto corrupto exige confirmación y lo audita', async () => {
+  const app = await createApp();
+  const { window, document } = app;
+  const record = JSON.parse(fs.readFileSync(path.join(root, 'examples', 'ejemplo-traza.json'), 'utf8'));
+  const attachment = record.entries[0].attachments[0];
+  attachment.content.data =
+    (attachment.content.data[0] === 'A' ? 'B' : 'A') + attachment.content.data.slice(1);
+  record.entries = await RTPChain.computeChain(record.entries);
+  record.integrity.chain_head = record.entries[record.entries.length - 1].hash;
+  record.integrity.record_hash = await RTPChain.computeRecordHash(record);
+
+  await loadJsonFile(window, document, JSON.stringify(record), 'contenido-corrupto.json');
+  assert.match(document.getElementById('confirm-message').textContent, /contenido de/i);
+  assert.match(document.getElementById('confirm-details').textContent, /Contenido:/);
+  await acceptConfirm(window, document);
+
+  const stored = JSON.parse(window.localStorage.getItem('rtp:v1:draft'));
+  const importedEvent = stored.audit_log.find((event) => event.type === 'record_imported');
+  assert.equal(importedEvent.attachments_valid, false);
+  assert.equal(importedEvent.chain_valid, true);
+  assert.equal(importedEvent.record_hash_valid, true);
 
   assert.deepEqual(app.errors.map(String), []);
   window.close();

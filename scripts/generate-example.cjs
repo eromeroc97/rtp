@@ -4,14 +4,36 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const RTPChain = require('../assets/chain.js');
-const RTPHash = require('../assets/sha256.js');
 const RTPValidate = require('../assets/validate.js');
+const RTPAttachments = require('../assets/attachments.js');
 const CONFIG = require('../assets/config.js');
 
 const EXPORTED_AT = '2026-11-09T18:42:11.000Z';
 
 async function main() {
-  const attachmentHash = await RTPHash.sha256Hex('apuntes_tema3.pdf');
+  const attachmentBytes = new TextEncoder().encode(
+    [
+      '%PDF-1.4',
+      '% Ejemplo didáctico de RTP: contenido mínimo recuperable.',
+      '1 0 obj',
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      'endobj',
+      '2 0 obj',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      'endobj',
+      '3 0 obj',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>',
+      'endobj',
+      'trailer',
+      '<< /Root 1 0 R >>',
+      '%%EOF'
+    ].join('\n')
+  );
+  const attachment = await RTPAttachments.encodeAttachment({
+    name: 'apuntes_tema3.pdf',
+    mimeType: 'application/pdf',
+    bytes: attachmentBytes
+  });
 
   const entries = [
     {
@@ -20,14 +42,7 @@ async function main() {
       occurred_at: '2026-11-09T17:05:00+01:00',
       recorded_at: '2026-11-09T17:05:31.000Z',
       model: { provider: 'OpenAI', name: 'GPT-4o', access: 'paid' },
-      attachments: [
-        {
-          name: 'apuntes_tema3.pdf',
-          size_bytes: 182734,
-          mime_type: 'application/pdf',
-          sha256: attachmentHash
-        }
-      ],
+      attachments: [attachment],
       prompt:
         'Actúa como revisor académico. A partir de estos apuntes, identifica las tres ideas principales sobre evaluación procesal y señala qué evidencias faltan para sostener cada una.'
     },

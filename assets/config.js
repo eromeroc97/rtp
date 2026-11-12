@@ -11,8 +11,9 @@
   return {
     appName: 'RTP',
     appFullName: 'Registro de Trazabilidad de Prompts',
-    version: '1.0.0',
-    schemaVersion: '1.0.0',
+    version: '1.1.0',
+    schemaVersion: '1.1.0',
+    supportedSchemaVersions: ['1.0.0', '1.1.0'],
     defaultCourse: '2026/27',
     defaultAssignment: {
       id: '',
@@ -35,8 +36,11 @@
     },
     limits: {
       maxPromptChars: 100000,
-      maxAttachmentMB: 100,
-      maxAttachmentsPerEntry: 20
+      maxAttachmentMB: 10,
+      maxTotalAttachmentMB: 50,
+      maxAttachmentsPerEntry: 20,
+      maxDraftContentMB: 4,
+      maxLiveJsonMB: 8
     }
   };
 });

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const RTPChain = require('../assets/chain.js');
 const RTPHash = require('../assets/sha256.js');
+const RTPAttachments = require('../assets/attachments.js');
 
 const entries = [
   {
@@ -65,6 +66,29 @@ test('detecta la modificación de un prompt', async () => {
   const result = await RTPChain.verifyChain(tampered);
   assert.equal(result.valid, false);
   assert.equal(result.index, 1);
+  assert.equal(result.reason, 'hash');
+});
+
+test('el contenido incrustado de un adjunto queda cubierto por la cadena', async () => {
+  const attachment = await RTPAttachments.encodeAttachment({
+    name: 'nota.txt',
+    mimeType: 'text/plain',
+    bytes: new TextEncoder().encode('contenido original')
+  });
+  const withAttachment = [
+    Object.assign({}, entries[0], { attachments: [attachment] }),
+    entries[1]
+  ];
+
+  const chained = await RTPChain.computeChain(withAttachment);
+  assert.equal((await RTPChain.verifyChain(chained)).valid, true);
+
+  const tampered = clone(chained);
+  tampered[0].attachments[0].content.data += 'AAAA';
+
+  const result = await RTPChain.verifyChain(tampered);
+  assert.equal(result.valid, false);
+  assert.equal(result.index, 0);
   assert.equal(result.reason, 'hash');
 });
 

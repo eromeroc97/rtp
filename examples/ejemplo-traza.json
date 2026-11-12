@@ -1,8 +1,8 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "tool": {
     "name": "RTP",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "exported_at": "2026-11-09T18:42:11.000Z",
   "student": {
@@ -33,14 +33,22 @@
       "attachments": [
         {
           "name": "apuntes_tema3.pdf",
-          "size_bytes": 182734,
+          "size_bytes": 277,
           "mime_type": "application/pdf",
-          "sha256": "0b9a25db7ce39c425368dc25bf33370b7327e656ed7fdff9d556994e699b2df6"
+          "sha256": "18406efdc44f297baff7dec99718ca98dc9d04468b136c4998b5203fd4b3bb37",
+          "content": {
+            "encoding": "base64",
+            "compression": "gzip",
+            "original_size_bytes": 277,
+            "compressed_size_bytes": 207,
+            "compressed_sha256": "09ca7882d9ffee10ebdff5fe3edf04af5c52953363177a2364eb1310454a06b2",
+            "data": "H4sIAAAAAAAAE22OMQ6CQBREe04xDaUuoCZqDIUojTESYmcsVvaHLIH9ZFkTPY4H8BRezKAWJtpM9d7M+NkqHYTDsedjXVHT1gyl1eNWOF0wFCHfZ3MUbBwZrRjN4250w7BUnFuy8lTT0AsRgE+Vt1hA7K8tQSTSyZpLiEyW1CFCgBxx7JFRPRj9CG9ObLTqcBj1+BEi4bNxCL/E0V+xT0vGfXbElpSWS77gECDAZDbBdBwdv2qclbom+6rJmfuNz0HfX+/SJ+b6fysVAQAA"
+          }
         }
       ],
       "prompt": "Actúa como revisor académico. A partir de estos apuntes, identifica las tres ideas principales sobre evaluación procesal y señala qué evidencias faltan para sostener cada una.",
       "prev_hash": "GENESIS",
-      "hash": "8dbef82d8fbd8feb0475189269f8ab310c879a02764404723aab5b3f65ebf64f"
+      "hash": "5bee6ae646f322163816a3cf1f286ff9bb9c61bbdc6137936dc6536065901b0a"
     },
     {
       "id": "e-0002",
@@ -54,8 +62,8 @@
       },
       "attachments": [],
       "prompt": "La afirmación anterior sobre la validez de los detectores de IA es demasiado general. Corrige el argumento y cita al menos dos limitaciones metodológicas que deberían aparecer en la memoria.",
-      "prev_hash": "8dbef82d8fbd8feb0475189269f8ab310c879a02764404723aab5b3f65ebf64f",
-      "hash": "545bb4a14017982fe8362f37718c39975095defbd5164dfb9804fef0007aa0b3"
+      "prev_hash": "5bee6ae646f322163816a3cf1f286ff9bb9c61bbdc6137936dc6536065901b0a",
+      "hash": "1d91fa46cfad8e00a4c2bd09ac0ec4eca329e4126c76cc2d90b7a178a72d38b3"
     },
     {
       "id": "e-0003",
@@ -69,8 +77,8 @@
       },
       "attachments": [],
       "prompt": "Compara las dos posturas anteriores y propone una síntesis de 120 palabras que pueda incluirse en el apartado de discusión, manteniendo las referencias y sin añadir afirmaciones nuevas.",
-      "prev_hash": "545bb4a14017982fe8362f37718c39975095defbd5164dfb9804fef0007aa0b3",
-      "hash": "71ed801dfc6eb7e84a6be95fa8f6186380516e4c4ecc69148d2ebbb1147f35bf"
+      "prev_hash": "1d91fa46cfad8e00a4c2bd09ac0ec4eca329e4126c76cc2d90b7a178a72d38b3",
+      "hash": "b2e0953a4469af62f5bf6111facc7b50f7db2cc3e6a3be0df1d5f43abb003dd6"
     }
   ],
   "audit_log": [
@@ -98,7 +106,7 @@
     "algorithm": "SHA-256",
     "canonicalization": "json-sorted-keys-v1",
     "entry_count": 3,
-    "chain_head": "71ed801dfc6eb7e84a6be95fa8f6186380516e4c4ecc69148d2ebbb1147f35bf",
-    "record_hash": "7722e31b81568dfbe219de3f41e16eed3c678b3ea3a56cf6db51aff5455452a5"
+    "chain_head": "b2e0953a4469af62f5bf6111facc7b50f7db2cc3e6a3be0df1d5f43abb003dd6",
+    "record_hash": "6c145a47ac3150bc2e76d7bb8d97c52fb2d374e2a80027cd3925e4db4cfae7b5"
   }
 }

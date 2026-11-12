@@ -667,14 +667,59 @@ textarea[aria-invalid="true"] {
 }
 
 .entry-attachments {
+  list-style: none;
   margin: 0;
-  padding-left: 1.1rem;
+  padding: 0;
   color: var(--muted);
+  display: grid;
+  gap: 0.35rem;
 }
 
 .entry-attachments li {
   overflow-wrap: anywhere;
-  margin-bottom: 0.2rem;
+}
+
+.attachment-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  padding: 0.45rem 0.55rem;
+}
+
+.attachment-entry-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.attachment-entry-info .attachment-meta {
+  margin-left: 0;
+  text-align: left;
+}
+
+.attachment-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.attachment-badge.is-recoverable {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.attachment-badge.is-hash-only {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .entry-actions {

@@ -11,6 +11,9 @@
   const HEX64 = /^[a-f0-9]{64}$/;
   const ENTRY_ID = /^e-[0-9]{4}$/;
   const SEMVER = /^\d+\.\d+\.\d+$/;
+  const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+  const SUPPORTED_SCHEMA_VERSIONS = ['1.0.0', '1.1.0'];
+  const CONTENT_SCHEMA_VERSION = '1.1.0';
 
   const AUDIT_TYPES = [
     'entry_created',
@@ -39,10 +42,95 @@
     return typeof value === 'string' && ISO_DATETIME.test(value) && !Number.isNaN(Date.parse(value));
   }
 
+  function base64DecodedLength(value) {
+    if (typeof value !== 'string' || value.length % 4 !== 0 || !BASE64.test(value)) {
+      return null;
+    }
+    const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+    return (value.length / 4) * 3 - padding;
+  }
+
   function checkUnknownKeys(obj, allowed, path, add) {
     for (const key of Object.keys(obj)) {
       if (!allowed.includes(key)) {
         add(path ? `${path}.${key}` : key, `Campo no permitido: «${key}».`);
+      }
+    }
+  }
+
+  function validateAttachmentContent(attachment, ap, add) {
+    const content = attachment.content;
+    const cp = `${ap}.content`;
+
+    if (!isPlainObject(content)) {
+      add(cp, 'El contenido del adjunto debe ser un objeto.');
+      return;
+    }
+
+    checkUnknownKeys(
+      content,
+      [
+        'encoding',
+        'compression',
+        'original_size_bytes',
+        'compressed_size_bytes',
+        'compressed_sha256',
+        'data'
+      ],
+      cp,
+      add
+    );
+
+    if (content.encoding !== 'base64') {
+      add(`${cp}.encoding`, 'La codificación del contenido debe ser «base64».');
+    }
+
+    const compressionValid = content.compression === 'gzip' || content.compression === 'none';
+    if (!compressionValid) {
+      add(`${cp}.compression`, 'La compresión debe ser «gzip» o «none».');
+    }
+
+    if (!isInteger(content.original_size_bytes) || content.original_size_bytes < 0) {
+      add(`${cp}.original_size_bytes`, 'El tamaño original debe ser un entero no negativo.');
+    } else if (isInteger(attachment.size_bytes) && content.original_size_bytes !== attachment.size_bytes) {
+      add(`${cp}.original_size_bytes`, 'El tamaño original no coincide con el del adjunto.');
+    }
+
+    if (!isInteger(content.compressed_size_bytes) || content.compressed_size_bytes < 0) {
+      add(`${cp}.compressed_size_bytes`, 'El tamaño comprimido debe ser un entero no negativo.');
+    }
+
+    if (!HEX64.test(content.compressed_sha256 || '')) {
+      add(`${cp}.compressed_sha256`, 'La huella del contenido comprimido debe ser hexadecimal de 64 caracteres.');
+    }
+
+    const decodedLength = base64DecodedLength(content.data);
+    if (decodedLength === null) {
+      add(`${cp}.data`, 'El contenido debe ser base64 válido.');
+    } else if (isInteger(content.compressed_size_bytes) && decodedLength !== content.compressed_size_bytes) {
+      add(`${cp}.data`, 'La longitud del contenido no coincide con el tamaño comprimido declarado.');
+    }
+
+    if (content.compression === 'none') {
+      if (
+        isInteger(attachment.size_bytes) &&
+        isInteger(content.compressed_size_bytes) &&
+        content.compressed_size_bytes !== attachment.size_bytes
+      ) {
+        add(
+          `${cp}.compressed_size_bytes`,
+          'Sin compresión, el tamaño almacenado debe coincidir con el tamaño original.'
+        );
+      }
+      if (
+        HEX64.test(attachment.sha256 || '') &&
+        HEX64.test(content.compressed_sha256 || '') &&
+        content.compressed_sha256 !== attachment.sha256
+      ) {
+        add(
+          `${cp}.compressed_sha256`,
+          'Sin compresión, la huella almacenada debe coincidir con la huella original.'
+        );
       }
     }
   }
@@ -77,8 +165,8 @@
     }
     checkUnknownKeys(record, topLevelKeys, '', add);
 
-    if (record.schema_version !== '1.0.0') {
-      add('schema_version', 'La versión de esquema debe ser 1.0.0.');
+    if (!SUPPORTED_SCHEMA_VERSIONS.includes(record.schema_version)) {
+      add('schema_version', 'La versión de esquema debe ser 1.0.0 o 1.1.0.');
     }
 
     if (isPlainObject(record.tool)) {
@@ -236,7 +324,15 @@
               add(ap, 'El adjunto debe ser un objeto.');
               return;
             }
-            checkUnknownKeys(attachment, ['name', 'size_bytes', 'mime_type', 'sha256'], ap, add);
+            const allowsContent = record.schema_version === CONTENT_SCHEMA_VERSION;
+            checkUnknownKeys(
+              attachment,
+              allowsContent
+                ? ['name', 'size_bytes', 'mime_type', 'sha256', 'content']
+                : ['name', 'size_bytes', 'mime_type', 'sha256'],
+              ap,
+              add
+            );
             if (!isNonEmptyString(attachment.name)) {
               add(`${ap}.name`, 'El nombre del adjunto es obligatorio.');
             } else if (attachment.name.length > 255) {
@@ -252,6 +348,16 @@
             }
             if (!HEX64.test(attachment.sha256 || '')) {
               add(`${ap}.sha256`, 'La huella SHA-256 debe ser hexadecimal de 64 caracteres.');
+            }
+            if (attachment.content !== undefined) {
+              if (!allowsContent) {
+                add(
+                  `${ap}.content`,
+                  'El contenido de los adjuntos requiere la versión de esquema 1.1.0.'
+                );
+              } else {
+                validateAttachmentContent(attachment, ap, add);
+              }
             }
           });
         }
@@ -282,7 +388,17 @@
         }
         checkUnknownKeys(
           event,
-          ['type', 'at', 'entry_id', 'changed_fields', 'source', 'chain_valid', 'record_hash_valid', 'note'],
+          [
+            'type',
+            'at',
+            'entry_id',
+            'changed_fields',
+            'source',
+            'chain_valid',
+            'record_hash_valid',
+            'attachments_valid',
+            'note'
+          ],
           p,
           add
         );
@@ -308,6 +424,9 @@
         }
         if (event.record_hash_valid !== undefined && typeof event.record_hash_valid !== 'boolean') {
           add(`${p}.record_hash_valid`, '«record_hash_valid» debe ser booleano.');
+        }
+        if (event.attachments_valid !== undefined && typeof event.attachments_valid !== 'boolean') {
+          add(`${p}.attachments_valid`, '«attachments_valid» debe ser booleano.');
         }
         if (event.note !== undefined && typeof event.note !== 'string') {
           add(`${p}.note`, '«note» debe ser una cadena.');
@@ -352,6 +471,7 @@
 
   return {
     validateRecord,
-    isIsoDateTime
+    isIsoDateTime,
+    SUPPORTED_SCHEMA_VERSIONS
   };
 });

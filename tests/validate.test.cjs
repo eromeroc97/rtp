@@ -115,3 +115,64 @@ test('valida correctamente fechas ISO 8601', () => {
   assert.equal(RTPValidate.isIsoDateTime('2026-11-09 17:05:00'), false);
   assert.equal(RTPValidate.isIsoDateTime('no-es-una-fecha'), false);
 });
+
+test('acepta un registro 1.0.0 sin contenido de adjuntos', () => {
+  const record = clone(example);
+  record.schema_version = '1.0.0';
+  for (const entry of record.entries) {
+    for (const attachment of entry.attachments) {
+      delete attachment.content;
+    }
+  }
+  const result = RTPValidate.validateRecord(record);
+  assert.deepEqual(result.errors, []);
+});
+
+test('rechaza el contenido de adjuntos en un registro 1.0.0', () => {
+  const record = clone(example);
+  record.schema_version = '1.0.0';
+  const result = RTPValidate.validateRecord(record);
+  assert.equal(result.valid, false);
+  assert.ok(paths(result).includes('entries[0].attachments[0].content'));
+});
+
+test('rechaza un contenido de adjunto sin la huella comprimida', () => {
+  const record = clone(example);
+  delete record.entries[0].attachments[0].content.compressed_sha256;
+  const result = RTPValidate.validateRecord(record);
+  assert.equal(result.valid, false);
+  assert.ok(paths(result).includes('entries[0].attachments[0].content.compressed_sha256'));
+});
+
+test('rechaza un tamaño comprimido incoherente con el base64', () => {
+  const record = clone(example);
+  record.entries[0].attachments[0].content.compressed_size_bytes += 100;
+  const result = RTPValidate.validateRecord(record);
+  assert.equal(result.valid, false);
+  assert.ok(paths(result).includes('entries[0].attachments[0].content.data'));
+});
+
+test('rechaza una compresión none con huellas distintas', () => {
+  const record = clone(example);
+  record.entries[0].attachments[0].content.compression = 'none';
+  record.entries[0].attachments[0].content.compressed_sha256 = '0'.repeat(64);
+  record.entries[0].attachments[0].content.compressed_size_bytes = record.entries[0].attachments[0].size_bytes;
+  const result = RTPValidate.validateRecord(record);
+  assert.equal(result.valid, false);
+  assert.ok(paths(result).includes('entries[0].attachments[0].content.compressed_sha256'));
+});
+
+test('valida el campo attachments_valid de la auditoría', () => {
+  const record = clone(example);
+  record.audit_log.push({
+    type: 'record_imported',
+    at: '2026-11-09T18:00:00.000Z',
+    attachments_valid: true
+  });
+  assert.deepEqual(RTPValidate.validateRecord(record).errors, []);
+
+  record.audit_log[record.audit_log.length - 1].attachments_valid = 'sí';
+  const result = RTPValidate.validateRecord(record);
+  assert.equal(result.valid, false);
+  assert.ok(paths(result).includes(`audit_log[${record.audit_log.length - 1}].attachments_valid`));
+});
